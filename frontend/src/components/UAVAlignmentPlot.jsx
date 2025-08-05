@@ -2,16 +2,25 @@ import React from "react";
 import { useSensorData } from "../context/SensorContext";
 
 const UAVAlignment = () => {
-  const { sensorData } = useSensorData();
+  const { sensorData, connectionState } = useSensorData();
   const ROLL_TOLERANCE = 5;
   const PITCH_TOLERANCE = 5;
-  const gyroX = parseFloat(sensorData?.I?.G?.xgyro || 0);
-  const gyroY = parseFloat(sensorData?.I?.G?.ygyro || 0);
-  const gyroZ = parseFloat(sensorData?.I?.G?.zgyro || 0);
-  const pitch = Math.min(Math.max(gyroY * 2, -45), 45);
-  const roll = Math.min(Math.max(gyroX * 2, -45), 45);
+
+  // Use AHRS2 values instead of IMU gyroscope data
+  const rollRadians = parseFloat(sensorData?.AHRS2?.roll || 0);
+  const pitchRadians = parseFloat(sensorData?.AHRS2?.pitch || 0);
+  const yawRadians = parseFloat(sensorData?.AHRS2?.yaw || 0);
+
+  // Convert radians to degrees
+  const roll = Math.min(Math.max((rollRadians * 180) / Math.PI, -45), 45);
+  const pitch = Math.min(Math.max((pitchRadians * 180) / Math.PI, -45), 45);
+  const yaw = (yawRadians * 180) / Math.PI;
+
   const isRollStable = Math.abs(roll) <= ROLL_TOLERANCE;
   const isPitchStable = Math.abs(pitch) <= PITCH_TOLERANCE;
+
+  // Check if we should show data or "---"
+  const shouldShowData = connectionState.isConnected;
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 text-white">
@@ -39,36 +48,46 @@ const UAVAlignment = () => {
           <div>
             <div className="text-xs text-gray-400 mb-1">Roll</div>
             <div className="font-mono text-sm font-semibold text-white">
-              {roll.toFixed(1)}°
+              {shouldShowData ? `${roll.toFixed(1)}°` : "---"}
             </div>
           </div>
           <div>
             <div className="text-xs text-gray-400 mb-1">Pitch</div>
             <div className="font-mono text-sm font-semibold text-white">
-              {pitch.toFixed(1)}°
+              {shouldShowData ? `${pitch.toFixed(1)}°` : "---"}
             </div>
           </div>
           <div>
             <div className="text-xs text-gray-400 mb-1">Yaw</div>
             <div className="font-mono text-sm font-semibold text-white">
-              {gyroZ.toFixed(1)}°/s
+              {shouldShowData ? `${yaw.toFixed(1)}°` : "---"}
             </div>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4 mb-2">
           <div
             className={`px-3 py-2 rounded text-sm font-medium text-white text-center ${
-              isRollStable ? "bg-green-600" : "bg-red-600"
+              shouldShowData
+                ? isRollStable
+                  ? "bg-green-600"
+                  : "bg-red-600"
+                : "bg-gray-600"
             }`}
           >
-            Roll {isRollStable ? "Stable" : "Unstable"}
+            Roll{" "}
+            {shouldShowData ? (isRollStable ? "Stable" : "Unstable") : "---"}
           </div>
           <div
             className={`px-3 py-2 rounded text-sm font-medium text-white text-center ${
-              isPitchStable ? "bg-green-600" : "bg-red-600"
+              shouldShowData
+                ? isPitchStable
+                  ? "bg-green-600"
+                  : "bg-red-600"
+                : "bg-gray-600"
             }`}
           >
-            Pitch {isPitchStable ? "Stable" : "Unstable"}
+            Pitch{" "}
+            {shouldShowData ? (isPitchStable ? "Stable" : "Unstable") : "---"}
           </div>
         </div>
         <div className="text-xs text-gray-400 text-center">

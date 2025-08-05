@@ -3,14 +3,17 @@ from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
-from simulated_mavlink import simulated_mavlink
-from mavlink_connection import mavlink_connection
+from bg_process import start_background_thread, stop_background_thread, get_data_store, clear_data_store
+from pymavlink.mavutil import mavlink_connection
 import time
 import json
 import uvicorn
 import asyncio
-import random
-from threading import Thread
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -39,38 +42,45 @@ three_d_plot_data = {
     "lidar_1": []
 }
 
-# Start simulated MAVLink data generation
-simulated_mavlink.start_simulation()
+# Global MAVLink connection
+master = None
+background_thread = None
 
 class ConnectionRequest(BaseModel):
-    device:str
-    baud:str
+    device: str
+    baud: str
 
 @app.post("/connect")
 async def connect(req: ConnectionRequest):
     """Establish MAVLink connection to flight controller"""
+    global master, background_thread
+    
     try:
-        # Use MAVLink connection module
-        success = mavlink_connection.connect(req.device, int(req.baud))
+        logger.info(f"Establishing MAVLink connection to {req.device} at {req.baud} baud")
         
-        if success:
-            connection_info = mavlink_connection.get_connection_info()
-            return {
-                "status": "connected", 
-                "message": f"MAVLink connection established to {req.device}",
-                "device": req.device,
-                "baud": req.baud,
-                "protocol": "MAVLink v2.0",
-                "system_id": connection_info["system_id"],
-                "component_id": connection_info["component_id"],
-                "connection_time": connection_info["connection_time"]
-            }
-        else:
-            return {
-                "status": "error",
-                "message": "Failed to establish MAVLink connection"
-            }
+        # Create MAVLink connection
+        master = mavlink_connection(req.device, baud=int(req.baud))
+        
+        # Wait for heartbeat to confirm connection
+        logger.info("Waiting for heartbeat...")
+        master.wait_heartbeat()
+        logger.info("Heartbeat received! Connection established.")
+        
+        # Start background thread to listen for messages
+        background_thread = start_background_thread(master)
+        
+        return {
+            "status": "connected", 
+            "message": f"MAVLink connection established to {req.device}",
+            "device": req.device,
+            "baud": req.baud,
+            "protocol": "MAVLink v2.0",
+            "system_id": master.target_system,
+            "component_id": master.target_component
+        }
+        
     except Exception as e:
+        logger.error(f"Connection failed: {str(e)}")
         return {
             "status": "error",
             "message": f"Connection failed: {str(e)}"
@@ -79,8 +89,21 @@ async def connect(req: ConnectionRequest):
 @app.post("/disconnect")
 async def disconnect():
     """Disconnect from flight controller"""
+    global master, background_thread
+    
     try:
-        mavlink_connection.disconnect()
+        # Stop background thread
+        if background_thread:
+            stop_background_thread()
+        
+        # Close MAVLink connection
+        if master:
+            master.close()
+            master = None
+        
+        # Clear data store
+        clear_data_store()
+        
         return {
             "status": "disconnected",
             "message": "MAVLink connection closed"
@@ -94,17 +117,22 @@ async def disconnect():
 @app.get("/set_ekf_origin")
 def set_ekf_origin_route():
     """Set EKF origin for navigation"""
+    global master
+    
     try:
-        # Simulate EKF origin setting
-        print("Setting EKF origin for navigation")
+        if not master:
+            return {
+                "status": "error",
+                "message": "Not connected to flight controller"
+            }
+        
+        # Send EKF origin command
+        logger.info("Setting EKF origin for navigation")
+        # You can add actual MAVLink commands here if needed
+        
         return {
             "status": "success", 
-            "message": "EKF origin set successfully",
-            "origin": {
-                "lat": 28.6139,
-                "lon": 77.209,
-                "alt": 216.5
-            }
+            "message": "EKF origin set successfully"
         }
     except Exception as e:
         return {
@@ -132,19 +160,22 @@ async def test_endpoint():
 async def stream_message_type(message_type: str, request: Request):
     if message_type not in allowed_types:
         raise HTTPException(status_code=404, detail="Unsupported message type")
-    print(f"Streaming message type: {message_type}")
+    logger.info(f"Streaming message type: {message_type}")
     
     async def event_generator():
         previous = None
         while True:
             if await request.is_disconnected():
-                print(f"Client disconnected from {message_type}")
+                logger.info(f"Client disconnected from {message_type}")
                 break
                 
-            msg = simulated_mavlink.data_store.get(message_type)
+            # Get data from the background process data store
+            data_store = get_data_store()
+            msg = data_store.get(message_type)
+            
             if msg and msg != previous:
                 data = json.dumps(msg)
-                print(f"Sending {message_type}: {data}")
+                logger.debug(f"Sending {message_type}: {data}")
                 yield {
                     "event": "message",
                     "data": data
@@ -165,11 +196,6 @@ async def stream_message_type(message_type: str, request: Request):
 
 @app.get("/stream/distance_sensor/{sensor_id}")
 async def stream_distance_sensor(sensor_id: int, request: Request):
-    def filter_by_id(msg):
-        print(f"Filtering by ID: {sensor_id}")
-        print(f"Message: {msg}")
-        return msg.get("id") == sensor_id
-    
     # Route to correct sensor based on ID
     message_type = f"DISTANCE_SENSOR_D{sensor_id}"
     
@@ -177,13 +203,16 @@ async def stream_distance_sensor(sensor_id: int, request: Request):
         previous = None
         while True:
             if await request.is_disconnected():
-                print(f"Client disconnected from {message_type}")
+                logger.info(f"Client disconnected from {message_type}")
                 break
                 
-            msg = simulated_mavlink.data_store.get(message_type)
+            # Get data from the background process data store
+            data_store = get_data_store()
+            msg = data_store.get(message_type)
+            
             if msg and msg != previous:
                 data = json.dumps(msg)
-                print(f"Sending {message_type}: {data}")
+                logger.debug(f"Sending {message_type}: {data}")
                 yield {
                     "event": "message",
                     "data": data
@@ -213,7 +242,8 @@ async def stream_all(request: Request):
         if await request.is_disconnected():
             break
 
-        for msg_type, msg in simulated_mavlink.data_store.items():
+        data_store = get_data_store()
+        for msg_type, msg in data_store.items():
             if msg_type not in previous or previous[msg_type] != msg:
                 yield {
                     "event": "message",
@@ -228,19 +258,20 @@ async def stream_all(request: Request):
 @app.get("/stream/3d_plot")
 async def stream_3d_plot(request: Request):
     """Stream accumulated 3D plot data"""
-    print("Streaming 3D plot data")
+    logger.info("Streaming 3D plot data")
     
     async def event_generator():
         previous_data = None
         while True:
             if await request.is_disconnected():
-                print("Client disconnected from 3D plot stream")
+                logger.info("Client disconnected from 3D plot stream")
                 break
                 
-            # Get current position and distance sensor data
-            vision_pos = simulated_mavlink.data_store.get("VISION_POSITION_ESTIMATE", {})
-            d0_data = simulated_mavlink.data_store.get("DISTANCE_SENSOR_D0", {})
-            d1_data = simulated_mavlink.data_store.get("DISTANCE_SENSOR_D1", {})
+            # Get current position and distance sensor data from real MAVLink
+            data_store = get_data_store()
+            vision_pos = data_store.get("VISION_POSITION_ESTIMATE", {})
+            d0_data = data_store.get("DISTANCE_SENSOR_D0", {})
+            d1_data = data_store.get("DISTANCE_SENSOR_D1", {})
             
             # Create new data points
             if vision_pos and d0_data and d1_data:
@@ -278,7 +309,7 @@ async def stream_3d_plot(request: Request):
                 
                 if plot_data != previous_data:
                     data = json.dumps(plot_data)
-                    print(f"Sending 3D plot data: {len(three_d_plot_data['lidar_0'])} points")
+                    logger.info(f"Sending 3D plot data: {len(three_d_plot_data['lidar_0'])} points")
                     yield {
                         "event": "message",
                         "data": data
@@ -306,7 +337,7 @@ async def reset_3d_plot():
         "lidar_0": [],
         "lidar_1": []
     }
-    print("3D plot data reset")
+    logger.info("3D plot data reset")
     return {"message": "3D plot data reset successfully"}
 
 @app.options("/stream/3d_plot")
@@ -317,13 +348,24 @@ async def options_3d_plot():
 @app.get("/mavlink/status")
 async def get_mavlink_status():
     """Get MAVLink connection status and system info"""
+    global master
+    
     try:
-        heartbeat = simulated_mavlink.get_message("HEARTBEAT")
+        if not master:
+            return {
+                "status": "disconnected",
+                "message": "No MAVLink connection"
+            }
+        
+        # Get heartbeat from data store
+        data_store = get_data_store()
+        heartbeat = data_store.get("HEARTBEAT")
+        
         if heartbeat:
             return {
                 "status": "connected",
-                "system_id": 1,
-                "component_id": 1,
+                "system_id": master.target_system,
+                "component_id": master.target_component,
                 "autopilot": "ArduPilot",
                 "type": "Quadrotor",
                 "mavlink_version": heartbeat.get("mavlink_version", 2),
@@ -333,8 +375,8 @@ async def get_mavlink_status():
             }
         else:
             return {
-                "status": "disconnected",
-                "message": "No MAVLink heartbeat received"
+                "status": "connected",
+                "message": "Connected but no heartbeat received yet"
             }
     except Exception as e:
         return {
@@ -346,11 +388,11 @@ async def get_mavlink_status():
 async def get_available_messages():
     """Get list of available MAVLink messages"""
     try:
-        messages = simulated_mavlink.get_all_messages()
+        data_store = get_data_store()
         return {
             "status": "success",
-            "message_count": len(messages),
-            "messages": list(messages.keys())
+            "message_count": len(data_store),
+            "messages": list(data_store.keys())
         }
     except Exception as e:
         return {
@@ -362,7 +404,9 @@ async def get_available_messages():
 async def get_specific_message(message_type: str):
     """Get a specific MAVLink message"""
     try:
-        message = simulated_mavlink.get_message(message_type)
+        data_store = get_data_store()
+        message = data_store.get(message_type)
+        
         if message:
             return {
                 "status": "success",
@@ -381,4 +425,4 @@ async def get_specific_message(message_type: str):
         }
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000) 

@@ -36,6 +36,7 @@ export const SensorProvider = ({ children }) => {
       satellites_visible: null,
     },
     F: { flow_x: null, flow_y: null, quality: null },
+    AHRS2: { roll: null, pitch: null, yaw: null },
     yaw: null, // Add yaw from AHRS2
   });
 
@@ -236,6 +237,22 @@ export const SensorProvider = ({ children }) => {
     sources.threeDPlot.onerror = (error) =>
       console.log("3D plot stream error:", error);
 
+    // AHRS2 stream for roll, pitch, yaw
+    sources.ahrs2 = new EventSource("http://localhost:8000/stream/AHRS2");
+    sources.ahrs2.onmessage = (event) => {
+      console.log("AHRS2 data received:", event.data);
+      const data = JSON.parse(event.data);
+      setSensorData((prev) => ({
+        ...prev,
+        AHRS2: { roll: data.roll, pitch: data.pitch, yaw: data.yaw },
+      }));
+    };
+    sources.ahrs2.onopen = () => console.log("AHRS2 stream connected");
+    sources.ahrs2.onerror = (error) => {
+      console.log("AHRS2 stream error:", error);
+      console.log("AHRS2 readyState:", sources.ahrs2.readyState);
+    };
+
     setEventSources(sources);
   }, [timeWindow]);
 
@@ -326,6 +343,11 @@ export const SensorProvider = ({ children }) => {
             Math.min(100, (prev.F.quality || 85) + (Math.random() - 0.5) * 10)
           ),
         },
+        AHRS2: {
+          roll: (prev.AHRS2?.roll || 0.1) + (Math.random() - 0.5) * 0.2,
+          pitch: (prev.AHRS2?.pitch || -0.05) + (Math.random() - 0.5) * 0.2,
+          yaw: (prev.AHRS2?.yaw || 1.57) + (Math.random() - 0.5) * 0.1,
+        },
         yaw: (prev.yaw || 0.5) + (Math.random() - 0.5) * 0.1,
       };
     });
@@ -366,9 +388,21 @@ export const SensorProvider = ({ children }) => {
       setIsMonitoring(true);
 
       // Try to connect to backend streams first
-      connectToBackendStreams();
+      fetch("http://localhost:8000/mavlink/status")
+        .then((response) => response.json())
+        .then((data) => {
+          console.log("MAVLink status check successful:", data);
+          connectToBackendStreams();
+        })
+        .catch((error) => {
+          console.error("MAVLink status check failed:", error);
+          console.log("Falling back to mock data");
+          // Fallback to mock data
+          const interval = setInterval(updateMockData, 100);
+          setSocket({ disconnect: () => clearInterval(interval) });
+        });
     },
-    [connectToBackendStreams]
+    [connectToBackendStreams, updateMockData]
   );
 
   const disconnect = useCallback(() => {
@@ -400,6 +434,7 @@ export const SensorProvider = ({ children }) => {
         satellites_visible: null,
       },
       F: { flow_x: null, flow_y: null, quality: null },
+      AHRS2: { roll: null, pitch: null, yaw: null },
       yaw: null,
     });
     setHistoricalData({
@@ -429,6 +464,7 @@ export const SensorProvider = ({ children }) => {
         satellites_visible: null,
       },
       F: { flow_x: null, flow_y: null, quality: null },
+      AHRS2: { roll: null, pitch: null, yaw: null },
       yaw: null,
     });
     setHistoricalData({
