@@ -14,6 +14,7 @@ const FlightPathPlot = () => {
     const ctx = canvas.getContext("2d");
     const width = canvas.width;
     const height = canvas.height;
+    const padding = 40;
 
     // Clear canvas
     ctx.fillStyle = "#374151";
@@ -27,8 +28,8 @@ const FlightPathPlot = () => {
     for (let i = 0; i <= 8; i++) {
       const x = (i / 8) * width;
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+      ctx.moveTo(x, padding);
+      ctx.lineTo(x, height - padding);
       ctx.stroke();
     }
 
@@ -36,19 +37,23 @@ const FlightPathPlot = () => {
     for (let i = 0; i <= 6; i++) {
       const y = (i / 6) * height;
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
+      ctx.moveTo(padding, y);
+      ctx.lineTo(width - padding, y);
       ctx.stroke();
     }
 
-    // Draw center cross
-    ctx.strokeStyle = "#6b7280";
+    // Draw axis lines
+    ctx.strokeStyle = "#9ca3af";
     ctx.lineWidth = 2;
+    // North-South line
     ctx.beginPath();
-    ctx.moveTo(width / 2, 0);
-    ctx.lineTo(width / 2, height);
-    ctx.moveTo(0, height / 2);
-    ctx.lineTo(width, height / 2);
+    ctx.moveTo(width / 2, padding);
+    ctx.lineTo(width / 2, height - padding);
+    ctx.stroke();
+    // East-West line
+    ctx.beginPath();
+    ctx.moveTo(padding, height / 2);
+    ctx.lineTo(width - padding, height / 2);
     ctx.stroke();
 
     // Draw axis labels
@@ -67,10 +72,13 @@ const FlightPathPlot = () => {
     ctx.fillText("East", 0, 0);
     ctx.restore();
 
-    // Draw scale indicator (1 meter = 10 pixels)
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "10px Arial";
-    ctx.fillText("Scale: 1m = 10px", 10, 20);
+    if (!connectionState.isConnected) {
+      ctx.fillStyle = "#9ca3af";
+      ctx.font = "14px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("Connect to view Flight Path", width / 2, height / 2);
+      return;
+    }
 
     // Only draw flight path if connected
     if (connectionState.isConnected) {
@@ -93,29 +101,29 @@ const FlightPathPlot = () => {
 
         ctx.stroke();
 
-        // Draw path points
-        flightPath.forEach((point) => {
-          const x = width / 2 + (point.east - centerOffset.east) * 10;
-          const y = height / 2 - (point.north - centerOffset.north) * 10;
+        // Display coordinates
+        ctx.fillStyle = "#9ca3af";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "left";
+        if (flightPath.length > 0) {
+          const lastPoint = flightPath[flightPath.length - 1];
+          ctx.fillText(`N: ${lastPoint.north.toFixed(1)}m`, 10, height - 10);
+          ctx.fillText(`E: ${lastPoint.east.toFixed(1)}m`, 10, height - 25);
+        } else {
+          ctx.fillText(`N: ${centerOffset.north.toFixed(1)}m`, 10, height - 10);
+        }
+        // Draw current position (center dot)
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(width / 2, height / 2, 5, 0, 2 * Math.PI);
+        ctx.fill();
 
-          ctx.fillStyle = "#3b82f6";
-          ctx.beginPath();
-          ctx.arc(x, y, 3, 0, 2 * Math.PI);
-          ctx.fill();
-        });
+        // Draw coordinates
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "12px Arial";
+        ctx.fillText(`N: ${centerOffset.north.toFixed(1)}m`, 10, height - 40);
+        ctx.fillText(`E: ${centerOffset.east.toFixed(1)}m`, 10, height - 25);
       }
-
-      // Draw current position (center dot)
-      ctx.fillStyle = "#ef4444";
-      ctx.beginPath();
-      ctx.arc(width / 2, height / 2, 5, 0, 2 * Math.PI);
-      ctx.fill();
-
-      // Draw coordinates
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "12px Arial";
-      ctx.fillText(`N: ${centerOffset.north.toFixed(1)}m`, 10, height - 40);
-      ctx.fillText(`E: ${centerOffset.east.toFixed(1)}m`, 10, height - 25);
     }
   }, [flightPath, centerOffset, connectionState.isConnected]);
 
@@ -161,56 +169,25 @@ const FlightPathPlot = () => {
   };
 
   return (
-    <div style={styles.container}>
-      <h2 style={styles.title}>Flight Path (NED Frame)</h2>
-      <canvas ref={canvasRef} width={400} height={300} style={styles.canvas} />
+    <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 text-white">
+      <h2 className="text-base font-semibold text-green-400 mb-4 text-center">
+        Flight Path (NED Frame)
+      </h2>
+      <canvas
+        ref={canvasRef}
+        width={450}
+        height={300}
+        className="w-full h-auto bg-gray-700 rounded mb-4"
+      />
       <button
         onClick={handleReset}
         disabled={!connectionState.isConnected}
-        style={{
-          ...styles.resetButton,
-          opacity: connectionState.isConnected ? 1 : 0.5,
-        }}
+        className="w-full bg-red-600 text-white rounded py-2 text-sm font-medium disabled:opacity-50"
       >
         Reset Center
       </button>
     </div>
   );
-};
-
-const styles = {
-  container: {
-    backgroundColor: "#1f2937",
-    borderRadius: "0.5rem",
-    padding: "1rem",
-    border: "1px solid #374151",
-    color: "#ffffff",
-  },
-  title: {
-    fontSize: "1rem",
-    fontWeight: 600,
-    color: "#4ade80",
-    marginBottom: "1rem",
-    textAlign: "center",
-  },
-  canvas: {
-    width: "100%",
-    height: "auto",
-    backgroundColor: "#374151",
-    borderRadius: "0.25rem",
-    marginBottom: "1rem",
-  },
-  resetButton: {
-    backgroundColor: "#dc2626",
-    color: "#ffffff",
-    border: "none",
-    borderRadius: "0.25rem",
-    padding: "0.5rem 1rem",
-    fontSize: "0.875rem",
-    fontWeight: 500,
-    cursor: "pointer",
-    width: "100%",
-  },
 };
 
 export default FlightPathPlot;

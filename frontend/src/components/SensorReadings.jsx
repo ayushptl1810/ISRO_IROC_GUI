@@ -1,10 +1,12 @@
 import React from "react";
 import { useSensorData } from "../context/SensorContext";
 
-const SensorValue = ({ label, value }) => (
+const SensorValue = ({ label, value, color }) => (
   <div className="flex justify-between items-center py-1">
     <span className="text-xs text-gray-400 font-medium">{label}</span>
-    <span className="font-mono text-sm text-white">{value || "---"}</span>
+    <span className={`font-mono text-sm ${color || "text-white"}`}>
+      {value || "---"}
+    </span>
   </div>
 );
 
@@ -26,11 +28,37 @@ export const LiveSensorReadings = () => {
     return typeof value === "number" ? value.toFixed(3) : value;
   };
 
-  // Helper function to format battery voltage (first element in voltages list)
+  // Helper function to format battery voltage and determine color
   const formatBatteryVoltage = (voltage) => {
-    if (voltage === null || voltage === undefined) return "---";
-    return (voltage / 1000).toFixed(3); // Convert 12345 to 12.345
+    if (voltage === null || voltage === undefined)
+      return { value: "---", color: "text-white" };
+    const formattedVoltage = (voltage / 1000).toFixed(3);
+    const color =
+      parseFloat(formattedVoltage) < 15 ? "text-red-500" : "text-green-500";
+    return { value: formattedVoltage, color };
   };
+
+  // Function to calculate terrain angle
+  const calculateTerrainAngle = (d0, d1, separation) => {
+    if (d0 === null || d1 === null || d0 === undefined || d1 === undefined) {
+      return { value: "---", color: "text-white" };
+    }
+    const deltaD = Math.abs(d0 - d1);
+    if (separation === 0) {
+      return { value: "0.000", color: "text-green-500" };
+    }
+    const thetaRad = Math.atan(deltaD / separation);
+    const thetaDeg = (thetaRad * 180) / Math.PI;
+    const color = thetaDeg > 15 ? "text-red-500" : "text-green-500";
+    return { value: thetaDeg.toFixed(3), color };
+  };
+
+  const battery = formatBatteryVoltage(sensorData?.voltages?.[0]);
+  const terrainAngle = calculateTerrainAngle(
+    sensorData?.D0,
+    sensorData?.D1,
+    21
+  );
 
   return (
     <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
@@ -52,7 +80,19 @@ export const LiveSensorReadings = () => {
           <div className="space-y-2">
             <SensorValue
               label="Voltage"
-              value={formatBatteryVoltage(sensorData?.voltages?.[0])}
+              value={`${battery.value} V`}
+              color={battery.color}
+            />
+          </div>
+        </SensorSection>
+
+        {/* Terrain Angle */}
+        <SensorSection title="Terrain Angle">
+          <div className="space-y-2">
+            <SensorValue
+              label="Angle"
+              value={`${terrainAngle.value}°`}
+              color={terrainAngle.color}
             />
           </div>
         </SensorSection>
@@ -63,32 +103,6 @@ export const LiveSensorReadings = () => {
             <SensorValue
               label="Flags"
               value={sensorData?.EKF_STATUS_REPORTS?.flags || "---"}
-            />
-          </div>
-        </SensorSection>
-
-        {/* Optical Flow */}
-        <SensorSection title="Optical Flow">
-          <div className="space-y-2">
-            <SensorValue
-              label="Flow Com MX"
-              value={formatValue(sensorData?.OPTICAL_FLOW?.flow_com_mx)}
-            />
-            <SensorValue
-              label="Flow Com MY"
-              value={formatValue(sensorData?.OPTICAL_FLOW?.flow_com_my)}
-            />
-            <SensorValue
-              label="Flow Rate X"
-              value={formatValue(sensorData?.OPTICAL_FLOW?.flow_rate_x)}
-            />
-            <SensorValue
-              label="Flow Rate Y"
-              value={formatValue(sensorData?.OPTICAL_FLOW?.flow_rate_y)}
-            />
-            <SensorValue
-              label="Quality"
-              value={formatValue(sensorData?.OPTICAL_FLOW?.quality)}
             />
           </div>
         </SensorSection>

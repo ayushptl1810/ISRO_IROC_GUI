@@ -8,17 +8,26 @@ import Navigation3DPlot from "./Navigation3DPlot";
 
 const MainLayout = () => {
   return (
-    <div className="grid grid-cols-6 gap-4">
-      <div className="col-span-1 flex flex-col gap-4">
+    <div className="grid grid-cols-6 grid-rows-[auto,1fr] gap-4">
+      {/* First row */}
+      <div className="col-span-1">
         <UAVAlignment />
+      </div>
+      <div className="col-span-3">
+        <LidarPlot />
+      </div>
+      <div className="col-span-2">
+        <FlightPathPlot />
+      </div>
+
+      {/* Second row */}
+      <div className="col-span-1">
         <LiveSensorReadings />
       </div>
-      <div className="col-span-3 grid grid-rows-2 gap-4">
-        <LidarPlot />
+      <div className="col-span-3">
         <DistanceSensorPlot />
       </div>
-      <div className="col-span-2 grid grid-rows-2 gap-4">
-        <FlightPathPlot />
+      <div className="col-span-2">
         <Navigation3DPlot />
       </div>
     </div>

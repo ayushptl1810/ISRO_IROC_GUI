@@ -156,9 +156,11 @@ const Navigation3DPlot = () => {
   };
 
   return (
-    <div style={styles.container}>
-      <h2 style={styles.title}>Navigation 3D Map</h2>
-      <div style={styles.plotContainer}>
+    <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 text-white h-full">
+      <h2 className="text-base font-semibold text-green-400 mb-4 text-center">
+        Navigation 3D Map
+      </h2>
+      <div className="h-[calc(100%-3rem)] bg-gray-700 rounded overflow-hidden">
         {connectionState.isConnected ? (
           <Plot
             data={plotData}
@@ -168,45 +170,13 @@ const Navigation3DPlot = () => {
             useResizeHandler={true}
           />
         ) : (
-          <div style={styles.disconnectedMessage}>
+          <div className="flex items-center justify-center h-full text-gray-400 text-sm">
             Connect to view 3D Navigation Map
           </div>
         )}
       </div>
     </div>
   );
-};
-
-const styles = {
-  container: {
-    backgroundColor: "#1f2937",
-    borderRadius: "0.5rem",
-    padding: "0.75rem",
-    border: "1px solid #374151",
-    color: "#ffffff",
-    height: "100%",
-  },
-  title: {
-    fontSize: "0.875rem",
-    fontWeight: 600,
-    color: "#4ade80",
-    marginBottom: "0.75rem",
-    textAlign: "center",
-  },
-  plotContainer: {
-    height: "calc(100% - 2.5rem)",
-    backgroundColor: "#374151",
-    borderRadius: "0.25rem",
-    overflow: "hidden",
-  },
-  disconnectedMessage: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    height: "100%",
-    color: "#9ca3af",
-    fontSize: "0.875rem",
-  },
 };
 
 export default Navigation3DPlot;
