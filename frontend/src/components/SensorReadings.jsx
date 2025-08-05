@@ -20,53 +20,56 @@ const SensorSection = ({ title, children }) => (
 );
 
 export const LiveSensorReadings = () => {
-  const { sensorData } = useSensorData();
+  const { sensorData, connectionState } = useSensorData();
 
   // Helper function to format values to 3 decimal places
   const formatValue = (value) => {
     if (value === null || value === undefined) return "---";
-    return typeof value === "number" ? value.toFixed(3) : value;
+    return Number(value).toFixed(3);
   };
 
-  // Helper function to format battery voltage and determine color
+  // Helper function to format battery voltage and apply color
   const formatBatteryVoltage = (voltage) => {
-    if (voltage === null || voltage === undefined)
-      return { value: "---", color: "text-white" };
-    const formattedVoltage = (voltage / 1000).toFixed(3);
-    const color =
-      parseFloat(formattedVoltage) < 15 ? "text-red-500" : "text-green-500";
-    return { value: formattedVoltage, color };
+    if (!voltage || voltage === null || voltage === undefined) return "---";
+    const voltageInVolts = voltage / 1000; // Convert millivolts to volts
+    const color = voltageInVolts >= 15 ? "text-green-500" : "text-red-500";
+    return { value: voltageInVolts.toFixed(3), color };
   };
 
-  // Function to calculate terrain angle
-  const calculateTerrainAngle = (d0, d1, separation) => {
+  // Helper function to calculate terrain angle
+  const calculateTerrainAngle = () => {
+    const d0 = sensorData?.D0;
+    const d1 = sensorData?.D1;
+    const separation = 21;
+
     if (d0 === null || d1 === null || d0 === undefined || d1 === undefined) {
-      return { value: "---", color: "text-white" };
+      return null;
     }
-    const deltaD = Math.abs(d0 - d1);
-    if (separation === 0) {
-      return { value: "0.000", color: "text-green-500" };
-    }
-    const thetaRad = Math.atan(deltaD / separation);
-    const thetaDeg = (thetaRad * 180) / Math.PI;
-    const color = thetaDeg > 15 ? "text-red-500" : "text-green-500";
-    return { value: thetaDeg.toFixed(3), color };
+
+    const delta_d = Math.abs(d0 - d1);
+    if (separation === 0) return 0.0;
+
+    const theta_rad = Math.atan(delta_d / separation);
+    const theta_deg = (theta_rad * 180) / Math.PI;
+    return theta_deg;
   };
+
+  // Check if we should show data or "---"
+  const shouldShowData = connectionState.isConnected;
 
   const battery = formatBatteryVoltage(sensorData?.voltages?.[0]);
-  const terrainAngle = calculateTerrainAngle(
-    sensorData?.D0,
-    sensorData?.D1,
-    21
-  );
+  const ekfFlags = sensorData?.EKF_STATUS_REPORTS?.flags;
+  const visionPosition = sensorData?.VISION_POSITION_ESTIMATE;
+  const visionSpeed = sensorData?.VISION_SPEED_ESTIMATE;
+  const terrainAngle = calculateTerrainAngle();
 
   return (
-    <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+    <div className="bg-gray-800 rounded-lg p-4 h-full">
       <h2
         style={{
-          fontSize: "1rem",
-          fontWeight: 600,
-          color: "#4ade80",
+          fontSize: "1.25rem",
+          fontWeight: "600",
+          color: "#f3f4f6",
           marginBottom: "1rem",
           textAlign: "center",
         }}
@@ -76,68 +79,75 @@ export const LiveSensorReadings = () => {
 
       <div className="space-y-4">
         {/* Battery Status */}
-        <SensorSection title="Battery Status">
-          <div className="space-y-2">
-            <SensorValue
-              label="Voltage"
-              value={`${battery.value} V`}
-              color={battery.color}
-            />
-          </div>
-        </SensorSection>
-
-        {/* Terrain Angle */}
-        <SensorSection title="Terrain Angle">
-          <div className="space-y-2">
-            <SensorValue
-              label="Angle"
-              value={`${terrainAngle.value}°`}
-              color={terrainAngle.color}
-            />
-          </div>
-        </SensorSection>
+        <div className="bg-gray-700 rounded p-3">
+          <h3 className="text-white font-medium mb-2">Battery Status</h3>
+          <SensorValue
+            label="Voltage"
+            value={shouldShowData ? battery.value : "---"}
+            color={shouldShowData ? battery.color : "text-white"}
+          />
+        </div>
 
         {/* EKF Status Reports */}
-        <SensorSection title="EKF Status Reports">
-          <div className="space-y-2">
-            <SensorValue
-              label="Flags"
-              value={sensorData?.EKF_STATUS_REPORTS?.flags || "---"}
-            />
-          </div>
-        </SensorSection>
+        <div className="bg-gray-700 rounded p-3">
+          <h3 className="text-white font-medium mb-2">EKF Status Reports</h3>
+          <SensorValue
+            label="Flags"
+            value={shouldShowData ? formatValue(ekfFlags) : "---"}
+          />
+        </div>
 
         {/* Vision Position Estimate */}
-        <SensorSection title="Vision Position Estimate">
-          <div className="space-y-2">
-            <SensorValue
-              label="X"
-              value={formatValue(sensorData?.VISION_POSITION_ESTIMATE?.x)}
-            />
-            <SensorValue
-              label="Y"
-              value={formatValue(sensorData?.VISION_POSITION_ESTIMATE?.y)}
-            />
-            <SensorValue
-              label="Z"
-              value={formatValue(sensorData?.VISION_POSITION_ESTIMATE?.z)}
-            />
-          </div>
-        </SensorSection>
+        <div className="bg-gray-700 rounded p-3">
+          <h3 className="text-white font-medium mb-2">
+            Vision Position Estimate
+          </h3>
+          <SensorValue
+            label="X"
+            value={shouldShowData ? formatValue(visionPosition?.x) : "---"}
+          />
+          <SensorValue
+            label="Y"
+            value={shouldShowData ? formatValue(visionPosition?.y) : "---"}
+          />
+          <SensorValue
+            label="Z"
+            value={shouldShowData ? formatValue(visionPosition?.z) : "---"}
+          />
+        </div>
 
         {/* Vision Speed Estimate */}
-        <SensorSection title="Vision Speed Estimate">
-          <div className="space-y-2">
-            <SensorValue
-              label="X"
-              value={formatValue(sensorData?.VISION_SPEED_ESTIMATE?.x)}
-            />
-            <SensorValue
-              label="Y"
-              value={formatValue(sensorData?.VISION_SPEED_ESTIMATE?.y)}
-            />
-          </div>
-        </SensorSection>
+        <div className="bg-gray-700 rounded p-3">
+          <h3 className="text-white font-medium mb-2">Vision Speed Estimate</h3>
+          <SensorValue
+            label="X"
+            value={shouldShowData ? formatValue(visionSpeed?.x) : "---"}
+          />
+          <SensorValue
+            label="Y"
+            value={shouldShowData ? formatValue(visionSpeed?.y) : "---"}
+          />
+        </div>
+
+        {/* Terrain Angle */}
+        <div className="bg-gray-700 rounded p-3">
+          <h3 className="text-white font-medium mb-2">Terrain Angle</h3>
+          <SensorValue
+            label="Angle"
+            value={
+              shouldShowData && terrainAngle !== null
+                ? formatValue(terrainAngle)
+                : "---"
+            }
+            color={
+              shouldShowData && terrainAngle !== null
+                ? terrainAngle > 15
+                  ? "text-red-500"
+                  : "text-green-500"
+                : "text-white"
+            }
+          />
+        </div>
       </div>
     </div>
   );

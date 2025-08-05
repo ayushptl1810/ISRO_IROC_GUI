@@ -51,7 +51,12 @@ const DistanceSensorPlot = () => {
     ctx.fillText("Distance (cm)", 0, 0);
     ctx.restore();
 
+    // Get data first
+    const distanceData = historicalData.values;
+    const timestamps = historicalData.timestamps;
+
     if (!connectionState.isConnected) {
+      // Show connect message when disconnected since data is cleared
       ctx.fillStyle = "#9ca3af";
       ctx.font = "14px Arial";
       ctx.textAlign = "center";
@@ -62,9 +67,6 @@ const DistanceSensorPlot = () => {
       );
       return;
     }
-
-    const distanceData = historicalData.values;
-    const timestamps = historicalData.timestamps;
 
     if (timestamps.length < 2) return;
 

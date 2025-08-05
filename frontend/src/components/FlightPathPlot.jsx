@@ -73,11 +73,14 @@ const FlightPathPlot = () => {
     ctx.restore();
 
     if (!connectionState.isConnected) {
-      ctx.fillStyle = "#9ca3af";
-      ctx.font = "14px Arial";
-      ctx.textAlign = "center";
-      ctx.fillText("Connect to view Flight Path", width / 2, height / 2);
-      return;
+      // Keep showing the last data instead of showing connect message
+      if (flightPath.length === 0) {
+        ctx.fillStyle = "#9ca3af";
+        ctx.font = "14px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Connect to view Flight Path", width / 2, height / 2);
+        return;
+      }
     }
 
     // Only draw flight path if connected
@@ -127,45 +130,41 @@ const FlightPathPlot = () => {
     }
   }, [flightPath, centerOffset, connectionState.isConnected]);
 
-  // Update flight path when GPS data changes
+  // Update flight path when Vision Position Estimate data changes
   useEffect(() => {
     if (
       connectionState.isConnected &&
-      sensorData?.G?.latitude &&
-      sensorData?.G?.longitude
+      sensorData?.VISION_POSITION_ESTIMATE?.x !== null &&
+      sensorData?.VISION_POSITION_ESTIMATE?.y !== null
     ) {
-      // Convert GPS to NED coordinates (simplified)
-      // In a real implementation, you'd use proper coordinate transformation
-      const lat = sensorData.G.latitude;
-      const lon = sensorData.G.longitude;
+      // Use Vision Position Estimate x,y values directly
+      const x = sensorData.VISION_POSITION_ESTIMATE.x;
+      const y = sensorData.VISION_POSITION_ESTIMATE.y;
 
-      // Simple conversion for demo (not accurate but shows the concept)
-      const north = (lat - 28.6139) * 111000; // Rough conversion to meters
-      const east = (lon - 77.209) * 111000 * Math.cos((lat * Math.PI) / 180);
+      // Convert to NED coordinates (x = east, y = north)
+      const north = y; // Y is north
+      const east = x; // X is east
 
       setFlightPath((prev) => [...prev, { north, east }]);
     }
   }, [
-    sensorData?.G?.latitude,
-    sensorData?.G?.longitude,
+    sensorData?.VISION_POSITION_ESTIMATE?.x,
+    sensorData?.VISION_POSITION_ESTIMATE?.y,
     connectionState.isConnected,
   ]);
 
-  const handleReset = () => {
-    if (
-      connectionState.isConnected &&
-      sensorData?.G?.latitude &&
-      sensorData?.G?.longitude
-    ) {
-      const lat = sensorData.G.latitude;
-      const lon = sensorData.G.longitude;
-
-      const north = (lat - 28.6139) * 111000;
-      const east = (lon - 77.209) * 111000 * Math.cos((lat * Math.PI) / 180);
-
-      setCenterOffset({ north, east });
+  // Clear flight path when disconnected
+  useEffect(() => {
+    if (!connectionState.isConnected) {
       setFlightPath([]);
+      setCenterOffset({ north: 0, east: 0 });
     }
+  }, [connectionState.isConnected]);
+
+  const handleReset = () => {
+    // Clear flight path and reset center offset
+    setFlightPath([]);
+    setCenterOffset({ north: 0, east: 0 });
   };
 
   return (

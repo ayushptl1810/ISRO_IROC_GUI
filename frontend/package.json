@@ -12,6 +12,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",
     "chartjs": "^0.3.24",
+    "plotly.js": "^3.0.3",
     "plotly.js-dist-min": "^3.0.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

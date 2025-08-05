@@ -36,6 +36,7 @@ export const SensorProvider = ({ children }) => {
       satellites_visible: null,
     },
     F: { flow_x: null, flow_y: null, quality: null },
+    yaw: null, // Add yaw from AHRS2
   });
 
   const [historicalData, setHistoricalData] = useState({
@@ -53,6 +54,7 @@ export const SensorProvider = ({ children }) => {
   const [timeWindow, setTimeWindow] = useState(60);
   const [socket, setSocket] = useState(null);
   const [flightStep, setFlightStep] = useState(0);
+  const [eventSources, setEventSources] = useState({});
 
   const flightPattern = [
     { lat: 28.6139, lon: 77.209 },
@@ -65,6 +67,187 @@ export const SensorProvider = ({ children }) => {
     { lat: 28.614, lon: 77.2089 },
     { lat: 28.6139, lon: 77.209 },
   ];
+
+  // Function to connect to backend streams
+  const connectToBackendStreams = useCallback(() => {
+    console.log("Connecting to backend streams...");
+
+    const sources = {};
+
+    // Battery status stream
+    sources.battery = new EventSource(
+      "http://localhost:8000/stream/BATTERY_STATUS"
+    );
+    sources.battery.onmessage = (event) => {
+      console.log("Battery data received:", event.data);
+      const data = JSON.parse(event.data);
+      setSensorData((prev) => ({
+        ...prev,
+        voltages: data.voltages,
+      }));
+    };
+    sources.battery.onopen = () => console.log("Battery stream connected");
+    sources.battery.onerror = (error) =>
+      console.log("Battery stream error:", error);
+
+    // EKF status stream
+    sources.ekf = new EventSource(
+      "http://localhost:8000/stream/EKF_STATUS_REPORT"
+    );
+    sources.ekf.onmessage = (event) => {
+      console.log("EKF data received:", event.data);
+      const data = JSON.parse(event.data);
+      setSensorData((prev) => ({
+        ...prev,
+        EKF_STATUS_REPORTS: { flags: data.flags },
+      }));
+    };
+    sources.ekf.onopen = () => console.log("EKF stream connected");
+    sources.ekf.onerror = (error) => console.log("EKF stream error:", error);
+
+    // Vision position estimate stream
+    sources.visionPosition = new EventSource(
+      "http://localhost:8000/stream/VISION_POSITION_ESTIMATE"
+    );
+    sources.visionPosition.onmessage = (event) => {
+      console.log("Vision position data received:", event.data);
+      const data = JSON.parse(event.data);
+      setSensorData((prev) => ({
+        ...prev,
+        VISION_POSITION_ESTIMATE: { x: data.x, y: data.y, z: data.z },
+      }));
+    };
+    sources.visionPosition.onopen = () =>
+      console.log("Vision position stream connected");
+    sources.visionPosition.onerror = (error) =>
+      console.log("Vision position stream error:", error);
+
+    // Vision speed estimate stream
+    sources.visionSpeed = new EventSource(
+      "http://localhost:8000/stream/VISION_SPEED_ESTIMATE"
+    );
+    sources.visionSpeed.onmessage = (event) => {
+      console.log("Vision speed data received:", event.data);
+      const data = JSON.parse(event.data);
+      setSensorData((prev) => ({
+        ...prev,
+        VISION_SPEED_ESTIMATE: { x: data.x, y: data.y },
+      }));
+    };
+    sources.visionSpeed.onopen = () =>
+      console.log("Vision speed stream connected");
+    sources.visionSpeed.onerror = (error) =>
+      console.log("Vision speed stream error:", error);
+
+    // Distance sensor D0 stream
+    sources.distance0 = new EventSource(
+      "http://localhost:8000/stream/distance_sensor/0"
+    );
+    sources.distance0.onmessage = (event) => {
+      console.log("Distance D0 data received:", event.data);
+      const data = JSON.parse(event.data);
+      const timestamp = Date.now();
+
+      setSensorData((prev) => ({
+        ...prev,
+        D0: data.current_distance,
+      }));
+
+      // Update historical data
+      setHistoricalData((prev) => {
+        const newTimestamps = [...prev.timestamps, timestamp];
+        const newValues = { ...prev.values };
+        const cutoffTime = timestamp - timeWindow * 1000;
+        const validIndices = newTimestamps
+          .map((t, i) => ({ t, i }))
+          .filter(({ t }) => t >= cutoffTime)
+          .map(({ i }) => i);
+
+        newValues.D0 = [
+          ...prev.values.D0.filter((_, i) => validIndices.includes(i)),
+          data.current_distance,
+        ];
+
+        return {
+          timestamps: newTimestamps.filter((_, i) => validIndices.includes(i)),
+          values: newValues,
+        };
+      });
+    };
+    sources.distance0.onopen = () =>
+      console.log("Distance D0 stream connected");
+    sources.distance0.onerror = (error) =>
+      console.log("Distance D0 stream error:", error);
+
+    // Distance sensor D1 stream
+    sources.distance1 = new EventSource(
+      "http://localhost:8000/stream/distance_sensor/1"
+    );
+    sources.distance1.onmessage = (event) => {
+      console.log("Distance D1 data received:", event.data);
+      const data = JSON.parse(event.data);
+      const timestamp = Date.now();
+
+      setSensorData((prev) => ({
+        ...prev,
+        D1: data.current_distance,
+      }));
+
+      // Update historical data
+      setHistoricalData((prev) => {
+        const newTimestamps = [...prev.timestamps, timestamp];
+        const newValues = { ...prev.values };
+        const cutoffTime = timestamp - timeWindow * 1000;
+        const validIndices = newTimestamps
+          .map((t, i) => ({ t, i }))
+          .filter(({ t }) => t >= cutoffTime)
+          .map(({ i }) => i);
+
+        newValues.D1 = [
+          ...prev.values.D1.filter((_, i) => validIndices.includes(i)),
+          data.current_distance,
+        ];
+
+        return {
+          timestamps: newTimestamps.filter((_, i) => validIndices.includes(i)),
+          values: newValues,
+        };
+      });
+    };
+    sources.distance1.onopen = () =>
+      console.log("Distance D1 stream connected");
+    sources.distance1.onerror = (error) =>
+      console.log("Distance D1 stream error:", error);
+
+    // 3D plot data stream (accumulated data)
+    sources.threeDPlot = new EventSource(
+      "http://localhost:8000/stream/3d_plot"
+    );
+    sources.threeDPlot.onmessage = (event) => {
+      console.log("3D plot data received:", event.data);
+      const data = JSON.parse(event.data);
+      // Store the accumulated 3D plot data
+      setSensorData((prev) => ({
+        ...prev,
+        threeDPlotData: data,
+      }));
+    };
+    sources.threeDPlot.onopen = () => console.log("3D plot stream connected");
+    sources.threeDPlot.onerror = (error) =>
+      console.log("3D plot stream error:", error);
+
+    setEventSources(sources);
+  }, [timeWindow]);
+
+  // Function to disconnect from backend streams
+  const disconnectFromBackendStreams = useCallback(() => {
+    Object.values(eventSources).forEach((source) => {
+      if (source) {
+        source.close();
+      }
+    });
+    setEventSources({});
+  }, [eventSources]);
 
   const updateMockData = useCallback(() => {
     const timestamp = Date.now();
@@ -143,6 +326,7 @@ export const SensorProvider = ({ children }) => {
             Math.min(100, (prev.F.quality || 85) + (Math.random() - 0.5) * 10)
           ),
         },
+        yaw: (prev.yaw || 0.5) + (Math.random() - 0.5) * 0.1,
       };
     });
 
@@ -177,27 +361,27 @@ export const SensorProvider = ({ children }) => {
 
   const connect = useCallback(
     (port, baudRate) => {
-      console.log("Mock: Connecting to", port, "at", baudRate);
+      console.log("Connecting to", port, "at", baudRate);
       setConnectionState({ isConnected: true, port, baudRate });
       setIsMonitoring(true);
-      const interval = setInterval(updateMockData, 100);
-      setSocket({ disconnect: () => clearInterval(interval) });
+
+      // Try to connect to backend streams first
+      connectToBackendStreams();
     },
-    [updateMockData]
+    [connectToBackendStreams]
   );
 
   const disconnect = useCallback(() => {
-    console.log("Mock: Disconnecting");
+    console.log("Disconnecting");
+    disconnectFromBackendStreams();
     if (socket) {
       socket.disconnect();
     }
     setSocket(null);
     setConnectionState((prev) => ({ ...prev, isConnected: false }));
     setIsMonitoring(false);
-  }, [socket]);
 
-  const resetData = useCallback(() => {
-    console.log("Mock: Resetting data");
+    // Clear all sensor data and historical data when disconnected
     setSensorData({
       voltages: [],
       EKF_STATUS_REPORTS: { flags: null },
@@ -216,6 +400,36 @@ export const SensorProvider = ({ children }) => {
         satellites_visible: null,
       },
       F: { flow_x: null, flow_y: null, quality: null },
+      yaw: null,
+    });
+    setHistoricalData({
+      timestamps: [],
+      values: { D0: [], D1: [], F: [], I: [], G: [] },
+    });
+    setFlightStep(0);
+  }, [socket, disconnectFromBackendStreams]);
+
+  const resetData = useCallback(() => {
+    console.log("Resetting data");
+    setSensorData({
+      voltages: [],
+      EKF_STATUS_REPORTS: { flags: null },
+      VISION_POSITION_ESTIMATE: { x: null, y: null, z: null },
+      VISION_SPEED_ESTIMATE: { x: null, y: null },
+      D0: null,
+      D1: null,
+      I: {
+        A: { xacc: null, yacc: null, zacc: null },
+        G: { xgyro: null, ygyro: null, zgyro: null },
+      },
+      G: {
+        latitude: null,
+        longitude: null,
+        altitude_m: null,
+        satellites_visible: null,
+      },
+      F: { flow_x: null, flow_y: null, quality: null },
+      yaw: null,
     });
     setHistoricalData({
       timestamps: [],
@@ -225,22 +439,23 @@ export const SensorProvider = ({ children }) => {
   }, []);
 
   const startMonitoring = useCallback(() => {
-    console.log("Mock: Starting monitoring");
+    console.log("Starting monitoring");
     setIsMonitoring(true);
   }, []);
 
   const stopMonitoring = useCallback(() => {
-    console.log("Mock: Stopping monitoring");
+    console.log("Stopping monitoring");
     setIsMonitoring(false);
   }, []);
 
   useEffect(() => {
     return () => {
+      disconnectFromBackendStreams();
       if (socket) {
         socket.disconnect();
       }
     };
-  }, [socket]);
+  }, [socket, disconnectFromBackendStreams]);
 
   const value = {
     sensorData,

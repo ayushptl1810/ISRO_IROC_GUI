@@ -51,16 +51,18 @@ const LidarPlot = () => {
     ctx.fillText("Distance (cm)", 0, 0);
     ctx.restore();
 
+    // Get data first
+    const lidarData = historicalData.values;
+    const timestamps = historicalData.timestamps;
+
     if (!connectionState.isConnected) {
+      // Show connect message when disconnected since data is cleared
       ctx.fillStyle = "#9ca3af";
       ctx.font = "14px Arial";
       ctx.textAlign = "center";
       ctx.fillText("Connect to view Lidar Data", width / 2, height / 2);
       return;
     }
-
-    const lidarData = historicalData.values;
-    const timestamps = historicalData.timestamps;
 
     if (timestamps.length < 2) return;
 
